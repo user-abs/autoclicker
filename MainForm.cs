@@ -47,6 +47,7 @@ internal sealed class MainForm : Form
     private readonly ContextMenuStrip _trayMenu;
     private readonly AutoContinueScheduler _scheduler;
     private readonly SynchronizationContext _uiContext;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
     private bool _hotkeyRegistered;
     private string? _lastError;
 
@@ -103,7 +104,7 @@ internal sealed class MainForm : Form
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         }
 
-        _clickTypeInput.Items.AddRange(["Single click", "Double click"]);
+        _clickTypeInput.Items.AddRange(["Single click", "Double click", "Two clicks (1.5 sec apart)"]);
         _clickTypeInput.SelectedIndex = 0;
         AddRow(layout, "Click type", _clickTypeInput, 0);
 
@@ -196,6 +197,7 @@ internal sealed class MainForm : Form
                 NativeMethods.UnregisterHotKey(Handle, CaptureHotkeyId);
             }
 
+            _lifetimeCancellation.Cancel();
             _scheduler.Dispose();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
@@ -225,11 +227,24 @@ internal sealed class MainForm : Form
         _scheduler.TogglePause();
     }
 
-    private void TestClick()
+    private async void TestClick()
     {
         try
         {
-            NativeMethods.ClickAt(new Point((int)_xInput.Value, (int)_yInput.Value), GetClickType());
+            var point = new Point((int)_xInput.Value, (int)_yInput.Value);
+            if (GetClickType() == MouseClickType.TwoClicksWithDelay)
+            {
+                NativeMethods.ClickAt(point);
+                await Task.Delay(AutoContinueScheduler.DelayedClickGap, _lifetimeCancellation.Token);
+                NativeMethods.ClickAt(point);
+            }
+            else
+            {
+                NativeMethods.ClickAt(point, GetClickType());
+            }
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -358,6 +373,7 @@ internal sealed class MainForm : Form
         {
             0 => MouseClickType.Single,
             1 => MouseClickType.Double,
+            2 => MouseClickType.TwoClicksWithDelay,
             _ => throw new InvalidOperationException("Select a click type.")
         };
 

@@ -13,7 +13,8 @@ internal enum SchedulerState
 internal enum MouseClickType
 {
     Single,
-    Double
+    Double,
+    TwoClicksWithDelay
 }
 
 internal readonly record struct SchedulerStatus(SchedulerState State, TimeSpan Remaining, int? RunsRemaining);
@@ -21,6 +22,7 @@ internal readonly record struct SchedulerStatus(SchedulerState State, TimeSpan R
 internal sealed class AutoContinueScheduler : IDisposable
 {
     private static readonly TimeSpan TickPeriod = TimeSpan.FromMilliseconds(200);
+    internal static readonly TimeSpan DelayedClickGap = TimeSpan.FromMilliseconds(1500);
     private readonly object _sync = new();
     private readonly System.Threading.Timer _timer;
     private readonly Action<Point, MouseClickType> _click;
@@ -30,6 +32,7 @@ internal sealed class AutoContinueScheduler : IDisposable
     private TimeSpan _interval;
     private TimeSpan _pausedRemaining;
     private int? _runsRemaining;
+    private bool _secondClickPending;
     private long _deadline;
     private bool _disposed;
 
@@ -62,6 +65,7 @@ internal sealed class AutoContinueScheduler : IDisposable
             _point = point;
             _clickType = clickType;
             _runsRemaining = runCount;
+            _secondClickPending = false;
             _deadline = Stopwatch.GetTimestamp() + ToStopwatchTicks(interval);
             _state = SchedulerState.Running;
             _timer.Change(TickPeriod, TickPeriod);
@@ -82,6 +86,7 @@ internal sealed class AutoContinueScheduler : IDisposable
             }
 
             _state = SchedulerState.Stopped;
+            _secondClickPending = false;
             _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
             status = GetStatus();
         }
@@ -141,26 +146,39 @@ internal sealed class AutoContinueScheduler : IDisposable
             {
                 try
                 {
-                    _click(_point, _clickType);
-                    if (_runsRemaining is int runsRemaining)
+                    if (_clickType == MouseClickType.TwoClicksWithDelay && !_secondClickPending)
                     {
-                        _runsRemaining = runsRemaining - 1;
-                    }
-
-                    if (_runsRemaining == 0)
-                    {
-                        _state = SchedulerState.Stopped;
-                        _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                        _click(_point, MouseClickType.Single);
+                        _secondClickPending = true;
+                        _deadline = Stopwatch.GetTimestamp() + ToStopwatchTicks(DelayedClickGap);
                     }
                     else
                     {
-                        _deadline = Stopwatch.GetTimestamp() + ToStopwatchTicks(_interval);
+                        _click(_point, _clickType == MouseClickType.TwoClicksWithDelay
+                            ? MouseClickType.Single
+                            : _clickType);
+                        _secondClickPending = false;
+                        if (_runsRemaining is int runsRemaining)
+                        {
+                            _runsRemaining = runsRemaining - 1;
+                        }
+
+                        if (_runsRemaining == 0)
+                        {
+                            _state = SchedulerState.Stopped;
+                            _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                        }
+                        else
+                        {
+                            _deadline = Stopwatch.GetTimestamp() + ToStopwatchTicks(_interval);
+                        }
                     }
                 }
                 catch (Exception exception)
                 {
                     error = exception;
                     _state = SchedulerState.Stopped;
+                    _secondClickPending = false;
                     _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
                 }
             }
@@ -206,6 +224,7 @@ internal sealed class AutoContinueScheduler : IDisposable
 
             _disposed = true;
             _state = SchedulerState.Stopped;
+            _secondClickPending = false;
             _timer.Dispose();
         }
     }

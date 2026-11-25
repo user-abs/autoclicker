@@ -6,14 +6,14 @@ screen or detect popups.
 
 ## Use
 
-- Choose single or double clicks, set an interval in seconds, minutes, or hours
-  (5 minutes by default), and enter the Continue button's X/Y screen
-  coordinates. Coordinates can be entered directly or captured with
+- Choose single clicks, rapid double clicks, or two clicks 1.5 seconds apart.
+  Set an interval in seconds, minutes, or hours (5 minutes by default), and
+  enter the Continue button's X/Y screen coordinates. Coordinates can be entered directly or captured with
   **Select Button Position**: move the pointer over the button and press
   **Ctrl+Alt+C**.
 - Choose **Repeat indefinitely** or clear it and enter a run count. A run
-  performs the selected click type once, so a double-click run sends two
-  consecutive clicks.
+  performs the selected click action once. With the delayed option, the
+  second click happens 1.5 seconds after the first.
 - Use **Test Click** to verify the position, then **Start**. The first
   automatic run occurs after the selected interval; subsequent runs repeat at
   that interval until the count is reached or automation is stopped.
