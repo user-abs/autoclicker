@@ -1,3 +1,40 @@
-# autoclicker
+# Auto Continue
 
-Build a lightweight Windows desktop “Auto Continue” utility that runs in the system tray and automatically clicks the fixed Continue button every 5 minutes without requiring any popup detection: the app should have a simple GUI with Start, Stop, Pause/Resume, Test Click, interval setting (default 5 minutes), and X/Y screen-coordinate fields, plus a small status showing whether automation is running and the countdown to the next click; when started, it should record or allow the user to specify the exact screen coordinates of the Continue button, wait for the configured interval, send a mouse-click event to those coordinates, reset the countdown, and repeat indefinitely until stopped, while using a Windows background timer so the automation doesn’t require the user to keep the GUI open; the first setup could include a “Select Button Position” feature where the user moves the mouse over Continue and presses a hotkey to capture its coordinates, and an optional startup with Windows setting; the implementation should be in C#/.NET, using Windows APIs for mouse input rather than crude screen-image recognition, with the option to later improve it so clicks are sent specifically to the target application’s window rather than the physical screen position.
+A lightweight Windows tray utility that clicks a fixed screen position at a
+configurable interval. It uses Windows `SendInput`; it does not inspect the
+screen or detect popups.
+
+## Use
+
+- Set the interval in minutes (5 by default) and the Continue button's X/Y
+  screen coordinates. Coordinates can be entered directly or captured with
+  **Select Button Position**: move the pointer over the button and press
+  **Ctrl+Alt+C**.
+- Use **Test Click** to verify the position, then **Start**. The first
+  automatic click occurs after the selected interval; subsequent clicks repeat
+  at that interval.
+- **Pause/Resume** preserves the remaining countdown. **Stop** ends automation.
+- Closing or minimizing the window hides it in the system tray; the timer keeps
+  running until stopped or the app is exited from the tray menu.
+- **Start with Windows** launches this app at sign-in by adding or removing it
+  from the current user's Windows startup registry key. Start automation from
+  the app after sign-in.
+
+Clicks move the physical mouse pointer to the configured screen position and
+send a left click. Keep the target visible and unobstructed. The app does not
+send clicks directly to a background window.
+
+## Build
+
+Build and run on Windows with the .NET 8 SDK:
+
+```powershell
+dotnet build
+dotnet run
+```
+
+To publish a Windows executable:
+
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained true
+```
