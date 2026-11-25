@@ -14,6 +14,11 @@ internal sealed class MainForm : Form
     private const string StartupKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string StartupValueName = "AutoContinue";
 
+    private readonly ComboBox _clickTypeInput = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 140
+    };
     private readonly NumericUpDown _intervalInput = new()
     {
         Minimum = 1,
@@ -22,6 +27,13 @@ internal sealed class MainForm : Form
         DecimalPlaces = 0,
         Width = 100
     };
+    private readonly ComboBox _intervalUnitInput = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 100
+    };
+    private readonly CheckBox _repeatIndefinitelyCheckBox = new() { Text = "Repeat indefinitely", AutoSize = true, Checked = true };
+    private readonly NumericUpDown _runCountInput = new() { Minimum = 1, Maximum = 1_000_000, Value = 10, DecimalPlaces = 0, Width = 100, Enabled = false };
     private readonly NumericUpDown _xInput = CreateCoordinateInput();
     private readonly NumericUpDown _yInput = CreateCoordinateInput();
     private readonly Button _startButton = new() { Text = "Start", AutoSize = true };
@@ -35,16 +47,15 @@ internal sealed class MainForm : Form
     private readonly ContextMenuStrip _trayMenu;
     private readonly AutoContinueScheduler _scheduler;
     private readonly SynchronizationContext _uiContext;
-    private bool _exitRequested;
     private bool _hotkeyRegistered;
     private string? _lastError;
 
     public MainForm()
     {
         Text = "Auto Continue";
-        Width = 500;
-        Height = 355;
-        MinimumSize = new Size(460, 330);
+        Width = 560;
+        Height = 435;
+        MinimumSize = new Size(520, 410);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -82,22 +93,38 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(14),
             ColumnCount = 2,
-            RowCount = 8,
+            RowCount = 10,
             AutoSize = false
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 165));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var i = 0; i < 8; i++)
+        for (var i = 0; i < 10; i++)
         {
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         }
 
-        AddRow(layout, "Interval (minutes)", _intervalInput, 0);
-        AddRow(layout, "X screen coordinate", _xInput, 1);
-        AddRow(layout, "Y screen coordinate", _yInput, 2);
+        _clickTypeInput.Items.AddRange(["Single click", "Double click"]);
+        _clickTypeInput.SelectedIndex = 0;
+        AddRow(layout, "Click type", _clickTypeInput, 0);
+
+        _intervalUnitInput.Items.AddRange(["seconds", "minutes", "hours"]);
+        _intervalUnitInput.SelectedIndex = 1;
+        var intervalPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        intervalPanel.Controls.Add(_intervalInput);
+        intervalPanel.Controls.Add(_intervalUnitInput);
+        AddRow(layout, "Interval", intervalPanel, 1);
+
+        var countPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        countPanel.Controls.Add(_repeatIndefinitelyCheckBox);
+        countPanel.Controls.Add(new Label { Text = "Run count:", AutoSize = true, Margin = new Padding(12, 6, 3, 3) });
+        countPanel.Controls.Add(_runCountInput);
+        AddRow(layout, "How many times", countPanel, 2);
+
+        AddRow(layout, "X screen coordinate", _xInput, 3);
+        AddRow(layout, "Y screen coordinate", _yInput, 4);
 
         _selectPositionButton.Margin = new Padding(3, 10, 3, 5);
-        layout.Controls.Add(_selectPositionButton, 0, 3);
+        layout.Controls.Add(_selectPositionButton, 0, 5);
         layout.SetColumnSpan(_selectPositionButton, 2);
 
         var buttons = new FlowLayoutPanel
@@ -108,7 +135,7 @@ internal sealed class MainForm : Form
             Margin = new Padding(0, 8, 0, 8)
         };
         buttons.Controls.AddRange([_startButton, _stopButton, _pauseButton, _testButton]);
-        layout.Controls.Add(buttons, 0, 4);
+        layout.Controls.Add(buttons, 0, 6);
         layout.SetColumnSpan(buttons, 2);
 
         var statusPanel = new FlowLayoutPanel
@@ -119,10 +146,10 @@ internal sealed class MainForm : Form
         };
         statusPanel.Controls.Add(new Label { Text = "Status:", AutoSize = true, Margin = new Padding(3, 5, 6, 3) });
         statusPanel.Controls.Add(_statusLabel);
-        layout.Controls.Add(statusPanel, 0, 5);
+        layout.Controls.Add(statusPanel, 0, 7);
         layout.SetColumnSpan(statusPanel, 2);
 
-        layout.Controls.Add(_startupCheckBox, 0, 6);
+        layout.Controls.Add(_startupCheckBox, 0, 8);
         layout.SetColumnSpan(_startupCheckBox, 2);
 
         var hint = new Label
@@ -131,7 +158,7 @@ internal sealed class MainForm : Form
             AutoSize = true,
             Margin = new Padding(3, 5, 3, 3)
         };
-        layout.Controls.Add(hint, 0, 7);
+        layout.Controls.Add(hint, 0, 9);
         layout.SetColumnSpan(hint, 2);
 
         Controls.Add(layout);
@@ -151,6 +178,9 @@ internal sealed class MainForm : Form
         _pauseButton.Click += (_, _) => TogglePause();
         _testButton.Click += (_, _) => TestClick();
         _selectPositionButton.Click += (_, _) => BeginPositionCapture();
+        _repeatIndefinitelyCheckBox.CheckedChanged += (_, _) =>
+            _runCountInput.Enabled = !_repeatIndefinitelyCheckBox.Checked;
+        _intervalUnitInput.SelectedIndexChanged += (_, _) => UpdateIntervalMaximum();
         _startupCheckBox.CheckedChanged += StartupCheckBoxChanged;
         Resize += (_, _) =>
         {
@@ -161,13 +191,6 @@ internal sealed class MainForm : Form
         };
         FormClosing += (_, e) =>
         {
-            if (!_exitRequested)
-            {
-                e.Cancel = true;
-                HideToTray();
-                return;
-            }
-
             if (_hotkeyRegistered)
             {
                 NativeMethods.UnregisterHotKey(Handle, CaptureHotkeyId);
@@ -184,8 +207,10 @@ internal sealed class MainForm : Form
     {
         _lastError = null;
         _scheduler.Start(
-            TimeSpan.FromMinutes((double)_intervalInput.Value),
-            new Point((int)_xInput.Value, (int)_yInput.Value));
+            GetInterval(),
+            new Point((int)_xInput.Value, (int)_yInput.Value),
+            GetClickType(),
+            _repeatIndefinitelyCheckBox.Checked ? null : (int)_runCountInput.Value);
     }
 
     private void StopAutomation()
@@ -204,7 +229,7 @@ internal sealed class MainForm : Form
     {
         try
         {
-            NativeMethods.ClickAt(new Point((int)_xInput.Value, (int)_yInput.Value));
+            NativeMethods.ClickAt(new Point((int)_xInput.Value, (int)_yInput.Value), GetClickType());
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or ArgumentOutOfRangeException)
         {
@@ -290,7 +315,12 @@ internal sealed class MainForm : Form
         _stopButton.Enabled = running || paused;
         _pauseButton.Enabled = running || paused;
         _pauseButton.Text = paused ? "Resume" : "Pause";
+        var settingsEnabled = status.State == SchedulerState.Stopped;
+        _clickTypeInput.Enabled = settingsEnabled;
         _intervalInput.Enabled = status.State == SchedulerState.Stopped;
+        _intervalUnitInput.Enabled = settingsEnabled;
+        _repeatIndefinitelyCheckBox.Enabled = settingsEnabled;
+        _runCountInput.Enabled = settingsEnabled && !_repeatIndefinitelyCheckBox.Checked;
         _xInput.Enabled = status.State == SchedulerState.Stopped;
         _yInput.Enabled = status.State == SchedulerState.Stopped;
         _selectPositionButton.Enabled = status.State == SchedulerState.Stopped && !_hotkeyRegistered;
@@ -298,8 +328,8 @@ internal sealed class MainForm : Form
 
         _statusLabel.Text = status.State switch
         {
-            SchedulerState.Running => $"Running — next click in {FormatCountdown(status.Remaining)}",
-            SchedulerState.Paused => $"Paused — {FormatCountdown(status.Remaining)} remaining",
+            SchedulerState.Running => $"Running{FormatRunsRemaining(status.RunsRemaining)} — next click in {FormatCountdown(status.Remaining)}",
+            SchedulerState.Paused => $"Paused{FormatRunsRemaining(status.RunsRemaining)} — {FormatCountdown(status.Remaining)} remaining",
             _ => _lastError is null ? "Stopped" : $"Stopped — {_lastError}"
         };
     }
@@ -309,6 +339,40 @@ internal sealed class MainForm : Form
         var seconds = Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds));
         var countdown = TimeSpan.FromSeconds(seconds);
         return $"{(int)countdown.TotalHours:00}:{countdown.Minutes:00}:{countdown.Seconds:00}";
+    }
+
+    private TimeSpan GetInterval()
+    {
+        var value = (double)_intervalInput.Value;
+        return _intervalUnitInput.SelectedIndex switch
+        {
+            0 => TimeSpan.FromSeconds(value),
+            1 => TimeSpan.FromMinutes(value),
+            2 => TimeSpan.FromHours(value),
+            _ => throw new InvalidOperationException("Select an interval unit.")
+        };
+    }
+
+    private MouseClickType GetClickType() =>
+        _clickTypeInput.SelectedIndex switch
+        {
+            0 => MouseClickType.Single,
+            1 => MouseClickType.Double,
+            _ => throw new InvalidOperationException("Select a click type.")
+        };
+
+    private static string FormatRunsRemaining(int? runsRemaining) =>
+        runsRemaining is int count ? $" — {count} runs left" : string.Empty;
+
+    private void UpdateIntervalMaximum()
+    {
+        _intervalInput.Maximum = _intervalUnitInput.SelectedIndex switch
+        {
+            0 => 86_400,
+            1 => 1_440,
+            2 => 24,
+            _ => 1_440
+        };
     }
 
     private void HideToTray()
@@ -328,7 +392,6 @@ internal sealed class MainForm : Form
 
     private void ExitApplication()
     {
-        _exitRequested = true;
         Close();
     }
 

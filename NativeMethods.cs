@@ -57,8 +57,15 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool UnregisterHotKey(IntPtr windowHandle, int id);
 
-    internal static void ClickAt(Point point)
+    internal static void ClickAt(Point point, MouseClickType clickType = MouseClickType.Single)
     {
+        var clickCount = clickType switch
+        {
+            MouseClickType.Single => 1,
+            MouseClickType.Double => 2,
+            _ => throw new ArgumentOutOfRangeException(nameof(clickType))
+        };
+
         var left = GetSystemMetrics(SmXVirtualScreen);
         var top = GetSystemMetrics(SmYVirtualScreen);
         var width = GetSystemMetrics(SmCxVirtualScreen);
@@ -76,13 +83,18 @@ internal static class NativeMethods
         var x = (int)Math.Round((point.X - left) * 65535d / (width - 1));
         var y = (int)Math.Round((point.Y - top) * 65535d / (height - 1));
         var moveFlags = MouseEventMove | MouseEventAbsolute | MouseEventVirtualDesk;
-        var inputs = new[]
+        var inputs = new List<Input>(1 + clickCount * 2)
         {
             CreateMouseInput(x, y, moveFlags),
-            CreateMouseInput(0, 0, MouseEventLeftDown),
-            CreateMouseInput(0, 0, MouseEventLeftUp)
         };
-        if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<Input>()) != (uint)inputs.Length)
+        for (var i = 0; i < clickCount; i++)
+        {
+            inputs.Add(CreateMouseInput(0, 0, MouseEventLeftDown));
+            inputs.Add(CreateMouseInput(0, 0, MouseEventLeftUp));
+        }
+
+        var inputArray = inputs.ToArray();
+        if (SendInput((uint)inputArray.Length, inputArray, Marshal.SizeOf<Input>()) != (uint)inputArray.Length)
         {
             var errorCode = Marshal.GetLastWin32Error();
             if (errorCode != 0)

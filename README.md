@@ -6,23 +6,28 @@ screen or detect popups.
 
 ## Use
 
-- Set the interval in minutes (5 by default) and the Continue button's X/Y
-  screen coordinates. Coordinates can be entered directly or captured with
+- Choose single or double clicks, set an interval in seconds, minutes, or hours
+  (5 minutes by default), and enter the Continue button's X/Y screen
+  coordinates. Coordinates can be entered directly or captured with
   **Select Button Position**: move the pointer over the button and press
   **Ctrl+Alt+C**.
+- Choose **Repeat indefinitely** or clear it and enter a run count. A run
+  performs the selected click type once, so a double-click run sends two
+  consecutive clicks.
 - Use **Test Click** to verify the position, then **Start**. The first
-  automatic click occurs after the selected interval; subsequent clicks repeat
-  at that interval.
+  automatic run occurs after the selected interval; subsequent runs repeat at
+  that interval until the count is reached or automation is stopped.
 - **Pause/Resume** preserves the remaining countdown. **Stop** ends automation.
-- Closing or minimizing the window hides it in the system tray; the timer keeps
-  running until stopped or the app is exited from the tray menu.
+- Minimizing the window hides it in the system tray and automation continues.
+  Closing the window or choosing **Exit** from the tray menu stops automation
+  and exits the app.
 - **Start with Windows** launches this app at sign-in by adding or removing it
   from the current user's Windows startup registry key. Start automation from
   the app after sign-in.
 
 Clicks move the physical mouse pointer to the configured screen position and
-send a left click. Keep the target visible and unobstructed. The app does not
-send clicks directly to a background window.
+send left-click input. Keep the target visible and unobstructed. The app does
+not send clicks directly to a background window.
 
 ## Build
 
