@@ -16,6 +16,9 @@ internal static class NativeMethods
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
+    private const int PointerSettleDelayMilliseconds = 100;
+    private const int ButtonPressDurationMilliseconds = 80;
+    private const int DoubleClickGapMilliseconds = 100;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Input
@@ -83,18 +86,31 @@ internal static class NativeMethods
         var x = (int)Math.Round((point.X - left) * 65535d / (width - 1));
         var y = (int)Math.Round((point.Y - top) * 65535d / (height - 1));
         var moveFlags = MouseEventMove | MouseEventAbsolute | MouseEventVirtualDesk;
-        var inputs = new List<Input>(1 + clickCount * 2)
-        {
-            CreateMouseInput(x, y, moveFlags),
-        };
+        SendMouseInput(CreateMouseInput(x, y, moveFlags));
+        Thread.Sleep(PointerSettleDelayMilliseconds);
+
         for (var i = 0; i < clickCount; i++)
         {
-            inputs.Add(CreateMouseInput(0, 0, MouseEventLeftDown));
-            inputs.Add(CreateMouseInput(0, 0, MouseEventLeftUp));
-        }
+            SendMouseInput(CreateMouseInput(0, 0, MouseEventLeftDown));
+            try
+            {
+                Thread.Sleep(ButtonPressDurationMilliseconds);
+            }
+            finally
+            {
+                SendMouseInput(CreateMouseInput(0, 0, MouseEventLeftUp));
+            }
 
-        var inputArray = inputs.ToArray();
-        if (SendInput((uint)inputArray.Length, inputArray, Marshal.SizeOf<Input>()) != (uint)inputArray.Length)
+            if (i + 1 < clickCount)
+            {
+                Thread.Sleep(DoubleClickGapMilliseconds);
+            }
+        }
+    }
+
+    private static void SendMouseInput(Input input)
+    {
+        if (SendInput(1, [input], Marshal.SizeOf<Input>()) != 1)
         {
             var errorCode = Marshal.GetLastWin32Error();
             if (errorCode != 0)
